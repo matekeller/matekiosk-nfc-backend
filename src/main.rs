@@ -89,7 +89,7 @@ async fn main() {
                 "3b8f8001804f0ca000000306030001000000006a" => CardEvent::CardPushed(format!("blanks_{}", rapdu)),
                 "3b8f8001804f0ca0000003060300020000000069" => CardEvent::CardPushed(format!("uka_{}", rapdu)),
                 "3b8d80018073c021c057597562694b65ff7f" => CardEvent::CardPushed(format!("ubi_{}", rapdu)),
-                a => { println!("{},{}", a, rapdu); CardEvent::CardRemoved},
+                a => { eprintln!("{},{}", a, rapdu); CardEvent::CardRemoved},
             }
         }
     });
@@ -101,11 +101,11 @@ async fn main() {
         let mut websocket = tungstenite::server::accept(stream.unwrap()).unwrap();
         tokio::spawn(async move {
             loop {
-                let last_event = match rec.recv().await {
+                let event = match rec.recv().await {
                     Ok(event) => event,
                     _ => continue,
                 };
-                websocket.write_message(tungstenite::Message::Text(serde_json::to_string(&CardEventWrapper{event: last_event.clone()}).unwrap())).map_err(|err| eprintln!("{}",err)).ok();
+                websocket.write_message(tungstenite::Message::Text(serde_json::to_string(&CardEventWrapper{event}).unwrap())).map_err(|err| eprintln!("{}",err)).ok();
             }
         });
     }

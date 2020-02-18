@@ -33,7 +33,7 @@ async fn main() {
         let mut last_event = CardEvent::CardRemoved;
         let mut second_last_event = CardEvent::CardRemoved;
         loop {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(200));
             if last_event != second_last_event {
                 sender_clone.send(last_event.clone()).ok();
             }
@@ -97,6 +97,7 @@ async fn main() {
     // websocket stuff
     let server = std::net::TcpListener::bind("127.0.0.1:9001").unwrap();
     for stream in server.incoming() {
+        use tungstenite::error::Error;
         let mut rec = sender.subscribe();
         let mut websocket = tungstenite::server::accept(stream.unwrap()).unwrap();
         tokio::spawn(async move {
@@ -105,8 +106,12 @@ async fn main() {
                     Ok(event) => event,
                     _ => continue,
                 };
-                websocket.write_message(tungstenite::Message::Text(serde_json::to_string(&CardEventWrapper{event}).unwrap())).map_err(|err| eprintln!("{}",err)).ok();
+                match websocket.write_message(tungstenite::Message::Text(serde_json::to_string(&CardEventWrapper{event}).unwrap())) {
+                    Err(Error::ConnectionClosed)|Err(Error::AlreadyClosed)|Err(Error::Io(_)) => break,
+                    _ => (),
+                }
             }
+            websocket.close(None);
         });
     }
 }

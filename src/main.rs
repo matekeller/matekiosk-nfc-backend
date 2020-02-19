@@ -26,19 +26,19 @@ async fn main() {
             let sender = sender.clone();
             let ctx = ctx.clone();
             std::thread::spawn(move || {
+                let mut event = CardEvent::CardRemoved;
                 let mut last_event = CardEvent::CardRemoved;
-                let mut second_last_event = CardEvent::CardRemoved;
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(100));
-                    if last_event != second_last_event {
-                        sender.send(last_event.clone()).ok();
+                    if event != last_event {
+                        sender.send(event.clone()).ok();
                     }
-                    second_last_event = last_event;
+                    last_event = event;
                     // Connect to the card.
                     let card = match ctx.connect(reader, ShareMode::Shared, Protocols::ANY) {
                         Ok(card) => card,
                         _ => {
-                            last_event = CardEvent::CardRemoved;
+                            event = CardEvent::CardRemoved;
                             continue;
                         }
                     };
@@ -51,14 +51,14 @@ async fn main() {
                             let mut rapdu =  hex::encode(rapdu);
                             let len = rapdu.len();
                             if len <= 4 {
-                                last_event = CardEvent::CardRemoved;
+                                event = CardEvent::CardRemoved;
                                 continue;
                             }
                             rapdu.truncate(len - 4);
                             rapdu
                         },
                         _ => {
-                            last_event = CardEvent::CardRemoved;
+                            event = CardEvent::CardRemoved;
                             continue
                         }
                     };
@@ -67,11 +67,11 @@ async fn main() {
                     let card_id = match card.status2(&mut names_buf, &mut atr_buf) {
                         Ok(card_id) => card_id.atr(),
                         _ => {
-                          last_event = CardEvent::CardRemoved;  
+                          event = CardEvent::CardRemoved;  
                           continue;
                         },
                     };
-                    last_event = match hex::encode(card_id).as_str() {
+                    event = match hex::encode(card_id).as_str() {
                         "3b8180018080" => CardEvent::CardPushed(format!("chip_{}",rapdu)),
                         "3b8980014d54434f537302020439" => {
                             rapdu.truncate(12);

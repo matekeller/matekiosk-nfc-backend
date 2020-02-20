@@ -1,8 +1,9 @@
+use crossbeam_channel::{Receiver, Sender};
+use parking_lot::Mutex;
 use pcsc::{Context, MAX_BUFFER_SIZE, MAX_ATR_SIZE , Protocols, Scope, ShareMode };
 use serde::Serialize;
-
-#[tokio::main]
-async fn main() {
+use std::sync::Arc;
+fn main() {
     let ctx = match Context::establish(Scope::User) {
         Ok(ctx) => ctx,
         Err(err) => {
@@ -10,7 +11,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    let (sender, _) = tokio::sync::broadcast::channel(10);
+    let mut sender = new_broadcaster();
     {
         // List available readers.
         let readers_buf = std::boxed::Box::leak(std::boxed::Box::new([0; 2048]));
@@ -31,7 +32,7 @@ async fn main() {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                     if event != last_event {
-                        sender.send(event.clone()).ok();
+                        sender.try_send(event.clone());
                     }
                     last_event = event;
                     // Connect to the card.
@@ -92,11 +93,11 @@ async fn main() {
     let server = std::net::TcpListener::bind("127.0.0.1:9001").unwrap();
     for stream in server.incoming() {
         use tungstenite::error::Error;
-        let mut rec = sender.subscribe();
+        let rec = sender.register_recv();
         let mut websocket = tungstenite::server::accept(stream.unwrap()).unwrap();
-        tokio::spawn(async move {
+        std::thread::spawn(move || {
             loop {
-                let event = match rec.recv().await {
+                let event = match rec.recv() {
                     Ok(event) => event,
                     _ => continue,
                 };
@@ -119,4 +120,30 @@ struct CardEventWrapper {
 enum CardEvent {
     CardPushed(String),
     CardRemoved,
+}
+
+#[derive(Clone, Debug)]
+pub struct Broadcaster<T> {
+    recievers: Arc<Mutex<Vec<Sender<T>>>>,
+}
+
+pub fn new_broadcaster<T>() -> Broadcaster<T> {
+    Broadcaster{ recievers: Arc::new(Mutex::new(Vec::new())) }
+}
+
+
+impl<T> Broadcaster<T> where T: Clone{
+    pub fn try_send(&self, message: T) {
+        self.recievers.lock().iter().for_each(|rec| Broadcaster::try_send_ignoring_errors(rec, message.clone()));
+    }
+
+    pub fn register_recv(&mut self) -> Receiver<T> {
+        let (sender, reciever) = crossbeam_channel::unbounded();
+        self.recievers.lock().push(sender);
+        reciever
+    }
+
+    fn try_send_ignoring_errors(sender: &Sender<T>, message: T) {
+        sender.try_send(message).ok();
+    }
 }

@@ -1,6 +1,8 @@
 [Unit]
 Description=NFCBackend
+After=pcscd.service
 After=network.target
+Requires=pcscd.service
 Requires=network.target
 
 [Service]

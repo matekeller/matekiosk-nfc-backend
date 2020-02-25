@@ -13,33 +13,30 @@ fn main() {
     };
     let mut sender = new_broadcaster();
     {
-        // List available readers.
-        let readers_buf = std::boxed::Box::leak(std::boxed::Box::new([0; 2048]));
-        let readers = match ctx.list_readers(readers_buf) {
-            Ok(readers) => readers,
-            Err(err) => {
-                eprintln!("Failed to list readers: {}", err);
-                std::process::exit(1);
-            }
-        };
-
-        for reader in readers {
-            let sender = sender.clone();
-            let ctx = ctx.clone();
-            std::thread::spawn(move || {
-                let mut event = CardEvent::CardRemoved;
-                let mut last_event = CardEvent::CardRemoved;
-                loop {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    if event != last_event {
-                        sender.try_send(event.clone());
+        let sender = sender.clone();
+        std::thread::spawn(move || {
+            let mut last_events = std::collections::HashMap::new();
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                // List available readers.
+                let readers_buf = std::boxed::Box::leak(std::boxed::Box::new([0; 2048]));
+                let readers = match ctx.list_readers(readers_buf) {
+                    Ok(readers) => readers,
+                    Err(err) => {
+                        eprintln!("Failed to list readers: {}", err);
+                        std::process::exit(1);
                     }
-                    last_event = event;
+                };
+
+                for reader in readers {
+                    if !last_events.contains_key(reader) {
+                        last_events.insert(reader, CardEvent::CardRemoved);
+                    }
                     // Connect to the card.
                     let card = match ctx.connect(reader, ShareMode::Shared, Protocols::ANY) {
                         Ok(card) => card,
                         _ => {
-                            event = CardEvent::CardRemoved;
+                            update_and_send_event(&mut last_events ,CardEvent::CardRemoved, reader, sender.clone()); 
                             continue;
                         }
                     };
@@ -52,14 +49,14 @@ fn main() {
                             let mut rapdu =  hex::encode(rapdu);
                             let len = rapdu.len();
                             if len <= 4 {
-                                event = CardEvent::CardRemoved;
+                                update_and_send_event(&mut last_events, CardEvent::CardRemoved, reader, sender.clone());
                                 continue;
                             }
                             rapdu.truncate(len - 4);
                             rapdu
                         },
                         _ => {
-                            event = CardEvent::CardRemoved;
+                            update_and_send_event(&mut last_events, CardEvent::CardRemoved, reader, sender.clone());
                             continue
                         }
                     };
@@ -68,11 +65,11 @@ fn main() {
                     let card_id = match card.status2(&mut names_buf, &mut atr_buf) {
                         Ok(card_id) => card_id.atr(),
                         _ => {
-                          event = CardEvent::CardRemoved;  
+                          update_and_send_event(&mut last_events, CardEvent::CardRemoved, reader, sender.clone());  
                           continue;
                         },
                     };
-                    event = match hex::encode(card_id).as_str() {
+                    let event = match hex::encode(card_id).as_str() {
                         "3b8180018080" => CardEvent::CardPushed(format!("chip_{}",rapdu)),
                         "3b8980014d54434f537302020439" => {
                             rapdu.truncate(12);
@@ -83,10 +80,11 @@ fn main() {
                         "3b8f8001804f0ca0000003060300020000000069" => CardEvent::CardPushed(format!("uka_{}", rapdu)),
                         "3b8d80018073c021c057597562694b65ff7f" => CardEvent::CardPushed(format!("ubi_{}", rapdu)),
                         a => { eprintln!("{},{}", a, rapdu); CardEvent::CardRemoved},
-                    }
+                    };
+                    update_and_send_event(&mut last_events, event, reader, sender.clone());
                 }
-            });
-        }
+            }
+        });
     }
 
     // websocket stuff
@@ -110,6 +108,15 @@ fn main() {
         });
     }
 }
+
+fn update_and_send_event<'a, T>(hashmap: &mut std::collections::HashMap<&'a std::ffi::CStr, T>, event: T, reader: &'a std::ffi::CStr, sender: Broadcaster<T>) where T: Clone + Eq {
+    hashmap.insert(reader, event.clone()).map(|last_event| {
+        if last_event != event {
+            sender.try_send(event);
+        }
+    });
+}
+
 
 #[derive(Serialize)]
 struct CardEventWrapper {

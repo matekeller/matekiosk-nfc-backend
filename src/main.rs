@@ -45,7 +45,7 @@ fn main() {
                 ctx.get_status_change(None, &mut reader_states).expect("failed to get status change");
 
                 for rs in &reader_states {
-                    if rs.name() != PNP_NOTIFICATION() && rs.name().to_bytes() == b"ACS ACR122U 00 00" {
+                    if rs.name() != PNP_NOTIFICATION() {
                         let event = if rs.event_state().contains(State::EMPTY) {
                             CardEvent::CardRemoved
                         } else {

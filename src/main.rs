@@ -1,87 +1,94 @@
 use crossbeam_channel::{Receiver, Sender};
 use parking_lot::Mutex;
-use pcsc::{Context, MAX_BUFFER_SIZE, MAX_ATR_SIZE , Protocols, Scope, ShareMode };
+use pcsc::{Context, MAX_BUFFER_SIZE, PNP_NOTIFICATION, Protocols, ReaderState, Scope, ShareMode, State};
 use serde::Serialize;
 use std::sync::Arc;
+
 fn main() {
-    let ctx = match Context::establish(Scope::User) {
-        Ok(ctx) => ctx,
-        Err(err) => {
-            eprintln!("Failed to establish context: {}", err);
-            std::process::exit(1);
-        }
-    };
     let mut sender = new_broadcaster();
     {
         let sender = sender.clone();
         std::thread::spawn(move || {
-            let mut last_events = std::collections::HashMap::new();
+            let ctx = Context::establish(Scope::User).expect("failed to establish context");
+            let mut readers_buf = [0; 2048];
+            let mut reader_states = vec![
+                // Listen for reader insertions/removals, if supported.
+                ReaderState::new(PNP_NOTIFICATION(), State::UNAWARE),
+            ];
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                // List available readers.
-                let readers_buf = std::boxed::Box::leak(std::boxed::Box::new([0; 2048]));
-                let readers = match ctx.list_readers(readers_buf) {
-                    Ok(readers) => readers,
-                    Err(err) => {
-                        eprintln!("Failed to list readers: {}", err);
-                        std::process::exit(1);
-                    }
-                };
+                // Remove dead readers.
+                fn is_dead(rs: &ReaderState) -> bool {
+                    rs.event_state().intersects(State::UNKNOWN | State::IGNORE)
+                }
 
-                for reader in readers {
-                    if !last_events.contains_key(reader) {
-                        last_events.insert(reader, CardEvent::CardRemoved);
+                for rs in &reader_states {
+                    if is_dead(rs) {
+                        println!("Removing {:?}", rs.name());
                     }
-                    // Connect to the card.
-                    let card = match ctx.connect(reader, ShareMode::Shared, Protocols::ANY) {
-                        Ok(card) => card,
-                        _ => {
-                            update_and_send_event(&mut last_events ,CardEvent::CardRemoved, reader, sender.clone()); 
-                            continue;
-                        }
-                    };
+                }
+                reader_states.retain(|rs| !is_dead(rs));
 
-                    // Send an APDU command.
-                    let apdu = b"\xFF\xCA\x00\x00\x00";
-                    let mut rapdu_buf = [0; MAX_BUFFER_SIZE];
-                    let mut rapdu = match card.transmit(apdu, &mut rapdu_buf) {
-                        Ok(rapdu) => {
-                            let mut rapdu =  hex::encode(rapdu);
-                            let len = rapdu.len();
-                            if len <= 4 {
-                                update_and_send_event(&mut last_events, CardEvent::CardRemoved, reader, sender.clone());
-                                continue;
+                // Add new readers.
+                let names = ctx.list_readers(&mut readers_buf).expect("failed to list readers");
+                for name in names {
+                    if !reader_states.iter().any(|rs| rs.name() == name) {
+                        reader_states.push(ReaderState::new(name, State::UNAWARE));
+                    }
+                }
+
+                // Update the view of the state to wait on.
+                for rs in &mut reader_states {
+                    rs.sync_current_state();
+                }
+
+                // Wait until the state changes.
+                ctx.get_status_change(None, &mut reader_states).expect("failed to get status change");
+
+                for rs in &reader_states {
+                    if rs.name() != PNP_NOTIFICATION() && rs.name().to_bytes() == b"ACS ACR122U 00 00" {
+                        let event = if rs.event_state().contains(State::EMPTY) {
+                            CardEvent::CardRemoved
+                        } else {
+
+                            let card = match ctx.connect(rs.name(), ShareMode::Shared, Protocols::ANY) {
+                                Ok(card) => card,
+                                _ => {
+                                    continue;
+                                }
+                            };
+
+                            // send apdu command
+                            let apdu = b"\xFF\xCA\x00\x00\x00";
+                            let mut rapdu_buf = [0; MAX_BUFFER_SIZE];
+                            let mut rapdu = match card.transmit(apdu, &mut rapdu_buf) {
+                                Ok(rapdu) => {
+                                    let mut rapdu =  hex::encode(rapdu);
+                                    let len = rapdu.len();
+                                    if len <= 4 {
+                                        continue;
+                                    }
+                                    rapdu.truncate(len - 4);
+                                    rapdu
+                                },
+                                _ => {
+                                    continue
+                                }
+                            };
+                            match hex::encode(rs.atr()).as_str() {
+                                "3b8180018080" => CardEvent::CardPushed(format!("chip_{}",rapdu)),
+                                "3b8980014d54434f537302020439" => {
+                                    rapdu.truncate(12);
+                                    CardEvent::CardPushed(format!("semesterticket_{}",rapdu))
+                                },
+                                "3b87800173c840000090006d" => CardEvent::CardPushed(format!("visa_{}", rapdu)),
+                                "3b8f8001804f0ca000000306030001000000006a" => CardEvent::CardPushed(format!("blanks_{}", rapdu)),
+                                "3b8f8001804f0ca0000003060300020000000069" => CardEvent::CardPushed(format!("uka_{}", rapdu)),
+                                "3b8d80018073c021c057597562694b65ff7f" => CardEvent::CardPushed(format!("ubi_{}", rapdu)),
+                                a => { eprintln!("{},{}", a, rapdu); CardEvent::CardRemoved},
                             }
-                            rapdu.truncate(len - 4);
-                            rapdu
-                        },
-                        _ => {
-                            update_and_send_event(&mut last_events, CardEvent::CardRemoved, reader, sender.clone());
-                            continue
-                        }
-                    };
-                    let mut names_buf = [0; MAX_ATR_SIZE];
-                    let mut atr_buf = [0; MAX_ATR_SIZE];
-                    let card_id = match card.status2(&mut names_buf, &mut atr_buf) {
-                        Ok(card_id) => card_id.atr(),
-                        _ => {
-                          update_and_send_event(&mut last_events, CardEvent::CardRemoved, reader, sender.clone());  
-                          continue;
-                        },
-                    };
-                    let event = match hex::encode(card_id).as_str() {
-                        "3b8180018080" => CardEvent::CardPushed(format!("chip_{}",rapdu)),
-                        "3b8980014d54434f537302020439" => {
-                            rapdu.truncate(12);
-                            CardEvent::CardPushed(format!("semesterticket_{}",rapdu))
-                        },
-                        "3b87800173c840000090006d" => CardEvent::CardPushed(format!("visa_{}", rapdu)),
-                        "3b8f8001804f0ca000000306030001000000006a" => CardEvent::CardPushed(format!("blanks_{}", rapdu)),
-                        "3b8f8001804f0ca0000003060300020000000069" => CardEvent::CardPushed(format!("uka_{}", rapdu)),
-                        "3b8d80018073c021c057597562694b65ff7f" => CardEvent::CardPushed(format!("ubi_{}", rapdu)),
-                        a => { eprintln!("{},{}", a, rapdu); CardEvent::CardRemoved},
-                    };
-                    update_and_send_event(&mut last_events, event, reader, sender.clone());
+                        };
+                        sender.try_send(event);
+                    }
                 }
             }
         });
@@ -107,14 +114,6 @@ fn main() {
             websocket.close(None).ok();
         });
     }
-}
-
-fn update_and_send_event<'a, T>(hashmap: &mut std::collections::HashMap<&'a std::ffi::CStr, T>, event: T, reader: &'a std::ffi::CStr, sender: Broadcaster<T>) where T: Clone + Eq {
-    hashmap.insert(reader, event.clone()).map(|last_event| {
-        if last_event != event {
-            sender.try_send(event);
-        }
-    });
 }
 
 

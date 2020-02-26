@@ -1,9 +1,7 @@
 [Unit]
 Description=NFCBackend
-After=pcscd.target
-After=network.target
-Requires=pcscd.target
-Requires=network.target
+After=pcscd.service
+Requires=pcscd.service
 
 [Service]
 User=pi

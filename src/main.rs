@@ -23,7 +23,7 @@ fn main() {
 
                 for rs in &reader_states {
                     if is_dead(rs) {
-                        println!("Removing {:?}", rs.name());
+                        sender.try_send(CardEvent::CardRemoved);
                     }
                 }
                 reader_states.retain(|rs| !is_dead(rs));

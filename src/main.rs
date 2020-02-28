@@ -8,6 +8,13 @@ fn main() {
     let mut sender = new_broadcaster();
     {
         let sender = sender.clone();
+        ctrlc::set_handler( move || {
+            sender.try_send(Event::SigTerm);
+            std::process::exit(0);
+        }).expect("Cant set signal handler");
+    }
+    {
+        let sender = sender.clone();
         std::thread::spawn(move || {
             let ctx = Context::establish(Scope::User).expect("failed to establish context");
             let mut readers_buf = [0; 2048];
@@ -23,7 +30,7 @@ fn main() {
 
                 for rs in &reader_states {
                     if is_dead(rs) {
-                        sender.try_send(CardEvent::CardRemoved);
+                        sender.try_send(Event::CardRemoved);
                     }
                 }
                 reader_states.retain(|rs| !is_dead(rs));
@@ -47,7 +54,7 @@ fn main() {
                 for rs in &reader_states {
                     if rs.name() != PNP_NOTIFICATION() {
                         let event = if rs.event_state().contains(State::EMPTY) {
-                            CardEvent::CardRemoved
+                            Event::CardRemoved
                         } else {
 
                             let card = match ctx.connect(rs.name(), ShareMode::Shared, Protocols::ANY) {
@@ -75,16 +82,16 @@ fn main() {
                                 }
                             };
                             match hex::encode(rs.atr()).as_str() {
-                                "3b8180018080" => CardEvent::CardPushed(format!("chip_{}",rapdu)),
+                                "3b8180018080" => Event::CardPushed(format!("chip_{}",rapdu)),
                                 "3b8980014d54434f537302020439" => {
                                     rapdu.truncate(12);
-                                    CardEvent::CardPushed(format!("semesterticket_{}",rapdu))
+                                    Event::CardPushed(format!("semesterticket_{}",rapdu))
                                 },
-                                "3b87800173c840000090006d" => CardEvent::CardPushed(format!("visa_{}", rapdu)),
-                                "3b8f8001804f0ca000000306030001000000006a" => CardEvent::CardPushed(format!("blanks_{}", rapdu)),
-                                "3b8f8001804f0ca0000003060300020000000069" => CardEvent::CardPushed(format!("uka_{}", rapdu)),
-                                "3b8d80018073c021c057597562694b65ff7f" => CardEvent::CardPushed(format!("ubi_{}", rapdu)),
-                                a => { eprintln!("{},{}", a, rapdu); CardEvent::CardRemoved},
+                                "3b87800173c840000090006d" => Event::CardPushed(format!("visa_{}", rapdu)),
+                                "3b8f8001804f0ca000000306030001000000006a" => Event::CardPushed(format!("blanks_{}", rapdu)),
+                                "3b8f8001804f0ca0000003060300020000000069" => Event::CardPushed(format!("uka_{}", rapdu)),
+                                "3b8d80018073c021c057597562694b65ff7f" => Event::CardPushed(format!("ubi_{}", rapdu)),
+                                a => { eprintln!("{},{}", a, rapdu); Event::CardRemoved},
                             }
                         };
                         sender.try_send(event);
@@ -106,7 +113,10 @@ fn main() {
                     Ok(event) => event,
                     _ => continue,
                 };
-                match websocket.write_message(tungstenite::Message::Text(serde_json::to_string(&CardEventWrapper{event}).unwrap())) {
+                if event.is_term() {
+                    websocket.close(None).ok();
+                }
+                match websocket.write_message(tungstenite::Message::Text(serde_json::to_string(&CardEvent{event}).unwrap())) {
                     Err(Error::ConnectionClosed)|Err(Error::AlreadyClosed)|Err(Error::Io(_)) => break,
                     _ => (),
                 }
@@ -118,14 +128,25 @@ fn main() {
 
 
 #[derive(Serialize)]
-struct CardEventWrapper {
-    event: CardEvent,
+struct CardEvent {
+    event: Event,
 }
 
 #[derive(Clone, Debug,Eq,PartialEq,Serialize)]
-enum CardEvent {
+enum Event {
     CardPushed(String),
     CardRemoved,
+    SigTerm,
+}
+
+impl Event {
+    
+    fn is_term(&self) -> bool {
+        match self {
+            Self::SigTerm => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

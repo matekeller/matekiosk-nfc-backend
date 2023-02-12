@@ -1,6 +1,8 @@
 use crossbeam_channel::{Receiver, Sender};
 use parking_lot::Mutex;
-use pcsc::{Context, MAX_BUFFER_SIZE, PNP_NOTIFICATION, Protocols, ReaderState, Scope, ShareMode, State};
+use pcsc::{
+    Context, Protocols, ReaderState, Scope, ShareMode, State, MAX_BUFFER_SIZE, PNP_NOTIFICATION,
+};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -8,10 +10,11 @@ fn main() {
     let mut sender = new_broadcaster();
     {
         let sender = sender.clone();
-        ctrlc::set_handler( move || {
+        ctrlc::set_handler(move || {
             sender.try_send(Event::SigTerm);
             std::process::exit(0);
-        }).expect("Cant set signal handler");
+        })
+        .expect("Cant set signal handler");
     }
     {
         let sender = sender.clone();
@@ -36,7 +39,9 @@ fn main() {
                 reader_states.retain(|rs| !is_dead(rs));
 
                 // Add new readers.
-                let names = ctx.list_readers(&mut readers_buf).expect("failed to list readers");
+                let names = ctx
+                    .list_readers(&mut readers_buf)
+                    .expect("failed to list readers");
                 for name in names {
                     if !reader_states.iter().any(|rs| rs.name() == name) {
                         reader_states.push(ReaderState::new(name, State::UNAWARE));
@@ -49,49 +54,59 @@ fn main() {
                 }
 
                 // Wait until the state changes.
-                ctx.get_status_change(None, &mut reader_states).expect("failed to get status change");
+                ctx.get_status_change(None, &mut reader_states)
+                    .expect("failed to get status change");
 
                 for rs in &reader_states {
                     if rs.name() != PNP_NOTIFICATION() {
                         let event = if rs.event_state().contains(State::EMPTY) {
                             Event::CardRemoved
                         } else {
-
-                            let card = match ctx.connect(rs.name(), ShareMode::Shared, Protocols::ANY) {
-                                Ok(card) => card,
-                                _ => {
-                                    continue;
-                                }
-                            };
+                            let card =
+                                match ctx.connect(rs.name(), ShareMode::Shared, Protocols::ANY) {
+                                    Ok(card) => card,
+                                    _ => {
+                                        continue;
+                                    }
+                                };
 
                             // send apdu command
                             let apdu = b"\xFF\xCA\x00\x00\x00";
                             let mut rapdu_buf = [0; MAX_BUFFER_SIZE];
                             let mut rapdu = match card.transmit(apdu, &mut rapdu_buf) {
                                 Ok(rapdu) => {
-                                    let mut rapdu =  hex::encode(rapdu);
+                                    let mut rapdu = hex::encode(rapdu);
                                     let len = rapdu.len();
                                     if len <= 4 {
                                         continue;
                                     }
                                     rapdu.truncate(len - 4);
                                     rapdu
-                                },
-                                _ => {
-                                    continue
                                 }
+                                _ => continue,
                             };
                             match hex::encode(rs.atr()).as_str() {
-                                "3b8180018080" => Event::CardPushed(format!("chip_{}",rapdu)),
-                                "3b8980014d54434f537302020439" => {
+                                "3b8180018080" => Event::CardPushed(format!("chip_{}", rapdu)),
+                                "3b8980014d54434f537302020439" | "3b8980014d54434f53730205043e" => {
                                     rapdu.truncate(12);
-                                    Event::CardPushed(format!("semesterticket_{}",rapdu))
-                                },
-                                "3b87800173c840000090006d" => Event::CardPushed(format!("visa_{}", rapdu)),
-                                "3b8f8001804f0ca000000306030001000000006a" => Event::CardPushed(format!("blanks_{}", rapdu)),
-                                "3b8f8001804f0ca0000003060300020000000069" => Event::CardPushed(format!("uka_{}", rapdu)),
-                                "3b8d80018073c021c057597562694b65ff7f" => Event::CardPushed(format!("ubi_{}", rapdu)),
-                                a => { eprintln!("{},{}", a, rapdu); Event::CardRemoved},
+                                    Event::CardPushed(format!("semesterticket_{}", rapdu))
+                                }
+                                "3b87800173c840000090006d" => {
+                                    Event::CardPushed(format!("visa_{}", rapdu))
+                                }
+                                "3b8f8001804f0ca000000306030001000000006a" => {
+                                    Event::CardPushed(format!("blanks_{}", rapdu))
+                                }
+                                "3b8f8001804f0ca0000003060300020000000069" => {
+                                    Event::CardPushed(format!("uka_{}", rapdu))
+                                }
+                                "3b8d80018073c021c057597562694b65ff7f" => {
+                                    Event::CardPushed(format!("ubi_{}", rapdu))
+                                }
+                                a => {
+                                    eprintln!("{},{}", a, rapdu);
+                                    Event::CardRemoved
+                                }
                             }
                         };
                         sender.try_send(event);
@@ -116,8 +131,12 @@ fn main() {
                 if event.is_term() {
                     websocket.close(None).ok();
                 }
-                match websocket.write_message(tungstenite::Message::Text(serde_json::to_string(&CardEvent{event}).unwrap())) {
-                    Err(Error::ConnectionClosed)|Err(Error::AlreadyClosed)|Err(Error::Io(_)) => break,
+                match websocket.write_message(tungstenite::Message::Text(
+                    serde_json::to_string(&CardEvent { event }).unwrap(),
+                )) {
+                    Err(Error::ConnectionClosed)
+                    | Err(Error::AlreadyClosed)
+                    | Err(Error::Io(_)) => break,
                     _ => (),
                 }
             }
@@ -126,13 +145,12 @@ fn main() {
     }
 }
 
-
 #[derive(Serialize)]
 struct CardEvent {
     event: Event,
 }
 
-#[derive(Clone, Debug,Eq,PartialEq,Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 enum Event {
     CardPushed(String),
     CardRemoved,
@@ -140,7 +158,6 @@ enum Event {
 }
 
 impl Event {
-    
     fn is_term(&self) -> bool {
         match self {
             Self::SigTerm => true,
@@ -155,13 +172,20 @@ pub struct Broadcaster<T> {
 }
 
 pub fn new_broadcaster<T>() -> Broadcaster<T> {
-    Broadcaster{ recievers: Arc::new(Mutex::new(Vec::new())) }
+    Broadcaster {
+        recievers: Arc::new(Mutex::new(Vec::new())),
+    }
 }
 
-
-impl<T> Broadcaster<T> where T: Clone{
+impl<T> Broadcaster<T>
+where
+    T: Clone,
+{
     pub fn try_send(&self, message: T) {
-        self.recievers.lock().iter().for_each(|rec| Broadcaster::try_send_ignoring_errors(rec, message.clone()));
+        self.recievers
+            .lock()
+            .iter()
+            .for_each(|rec| Broadcaster::try_send_ignoring_errors(rec, message.clone()));
     }
 
     pub fn register_recv(&mut self) -> Receiver<T> {

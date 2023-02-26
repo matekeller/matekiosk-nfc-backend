@@ -121,7 +121,7 @@ fn main() {
     for stream in server.incoming() {
         use tungstenite::error::Error;
         let rec = sender.register_recv();
-        let mut websocket = tungstenite::server::accept(stream.unwrap()).unwrap();
+        let mut websocket = tungstenite::accept(stream.unwrap()).unwrap();
         std::thread::spawn(move || {
             loop {
                 let event = match rec.recv() {

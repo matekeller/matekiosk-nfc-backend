@@ -1,17 +1,17 @@
 [package]
 name = "nfc_backend"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Max Böcker <max.boecker@rwth-aachen.de>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pcsc = "2.3.1"
-tungstenite = "0.10.1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.46"
-hex = "0.4.0"
-crossbeam-channel = "0.4.0"
-parking_lot = "0.10.0"
-ctrlc = { version = "3.1", features = ["termination"] }
+pcsc = "2.8.0"
+tungstenite = "0.18.0"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.93"
+hex = "0.4.3"
+crossbeam-channel = "0.5.6"
+parking_lot = "0.12.1"
+ctrlc = { version = "3.2.5", features = ["termination"] }

@@ -4,7 +4,10 @@ use pcsc::{
     Context, Protocols, ReaderState, Scope, ShareMode, State, MAX_BUFFER_SIZE, PNP_NOTIFICATION,
 };
 use serde::Serialize;
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{self, Duration},
+};
 
 fn main() {
     let mut sender = new_broadcaster();
@@ -15,6 +18,14 @@ fn main() {
             std::process::exit(0);
         })
         .expect("Cant set signal handler");
+    }
+    {
+        let sender = sender.clone();
+        std::thread::spawn(move || loop {
+            sender.try_send(Event::KeepAlive);
+            let ten_millis = time::Duration::from_secs(10);
+            std::thread::sleep(ten_millis)
+        });
     }
     {
         let sender = sender.clone();
@@ -120,8 +131,12 @@ fn main() {
     let server = std::net::TcpListener::bind("127.0.0.1:9001").unwrap();
     for stream in server.incoming() {
         use tungstenite::error::Error;
+        let stream = stream.unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(604800)))
+            .unwrap();
         let rec = sender.register_recv();
-        let mut websocket = tungstenite::accept(stream.unwrap()).unwrap();
+        let mut websocket = tungstenite::accept(stream).unwrap();
         std::thread::spawn(move || {
             loop {
                 let event = match rec.recv() {
@@ -155,6 +170,7 @@ enum Event {
     CardPushed(String),
     CardRemoved,
     SigTerm,
+    KeepAlive,
 }
 
 impl Event {

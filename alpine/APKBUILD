@@ -8,8 +8,10 @@ url="https://msrd0.dev/matekeller/matekiosk-nfc-backend"
 arch="aarch64"
 license="custom"
 
-source="nfc_backend-$pkgver.crate"
-makedepends="cargo rust-stdlib-aarch64"
+subpackages="$pkgname-openrc::noarch"
+
+source="nfc_backend.init nfc_backend-$pkgver.crate"
+makedepends="cargo rust-stdlib-aarch64 pcsc-lite-dev"
 builddir="$srcdir"
 
 prepare() {
@@ -39,4 +41,5 @@ build() {
 package() {
 	mkdir -p "$pkgdir"/usr/bin
 	install -m755 "$srcdir/target/$CTARGET"/release/nfc_backend "$pkgdir"/usr/bin
+	install -D -m755 "$srcdir/nfc_backend.init" "$pkgdir"/etc/init.d/nfc_backend
 }

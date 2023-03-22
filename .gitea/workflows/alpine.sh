@@ -24,6 +24,7 @@ abuild-apk update --root $CBUILDROOT --arch $CTARGET
 sudo chown -R ${USER:-1000} alpine
 
 # build the package
+APKBUILD=alpine/APKBUILD abuild checksum
 APKBUILD=alpine/APKBUILD abuild -r
 
 # inspect our home to find the package

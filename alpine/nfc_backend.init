@@ -1,0 +1,9 @@
+#!/sbin/openrc-run
+
+command="/usr/bin/nfc_backend"
+command_background=false
+
+depend() {
+	need net
+	need pcscd
+}

@@ -9,8 +9,8 @@ jobs:
       - name: Build Rust package
         uses: docker://docker.io/library/rust:slim
         with:
-          entrypoint: bash
-          args: -c 'cargo package --locked --no-verify'
+          entrypoint: /usr/local/cargo/bin/cargo
+          args: package --locked --no-verify
       - name: Copy Rust package
         run: |
           pkgver=$(find target/package/ -name '*.crate' | sed -E -e 's,^.*-,,' -e 's,\.crate,,')

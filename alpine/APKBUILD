@@ -10,8 +10,8 @@ license="custom"
 
 subpackages="$pkgname-openrc::noarch"
 
-makedepends_host="cargo rust-stdlib-aarch64 pcsc-lite-dev"
-makedepends_build="gcc pcsc-lite-dev"
+makedepends_build="cargo rust-stdlib-aarch64 pcsc-lite-dev"
+makedepends_host="gcc pcsc-lite-dev"
 
 source="nfc_backend.init nfc_backend-$pkgver.crate"
 builddir="$srcdir"

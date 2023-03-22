@@ -1,7 +1,8 @@
 #!/sbin/openrc-run
 
 command="/usr/bin/nfc_backend"
-command_background=false
+command_background=yes
+pidfile="/run/nfc_backend.pid"
 
 depend() {
 	need net

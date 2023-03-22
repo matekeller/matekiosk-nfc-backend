@@ -28,6 +28,3 @@ sudo chown -R ${USER:-1000} alpine packages
 # build the package
 APKBUILD=alpine/APKBUILD abuild checksum
 APKBUILD=alpine/APKBUILD abuild -r
-
-# copy the key
-cp ~/.abuild/$1.pub packages/matekiosk-nfc-backend/aarch64/

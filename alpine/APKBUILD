@@ -1,0 +1,33 @@
+# -*- mode: Shell-script; eval: (setq indent-tabs-mode 't); eval: (setq tab-width 4) -*-
+# Maintainer: Dominic Meiser <git@msrd0.de>
+pkgname=nfc_backend
+pkgver=%pkgver%
+pkgrel=0
+pkgdesc="MateKiosk NFC Backend"
+url="https://msrd0.dev/matekeller/matekiosk-nfc-backend"
+arch="aarch64"
+license="custom"
+
+sources="nfc_backend-$pkgver.crate"
+makedepends="cargo rust-stdlib-aarch64"
+builddir="$srcdir"
+
+prepare() {
+	default_prepare
+
+	tar xfz "nfc_backend-$pkgver.crate"
+}
+
+build() {
+	cargo build \
+		--manifest-path "nfc_backend-$pkgver/Cargo.toml" \
+		--locked \
+		--release \
+		--target-dir "$srcdir"/target \
+		--target "$CTARGET"
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin
+	install -m755 "$srcdir/target/$CTARGET"/release/nfc_backend "$pkgdir"/usr/bin
+}

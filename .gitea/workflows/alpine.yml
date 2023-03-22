@@ -1,0 +1,24 @@
+name: Alpine
+on: [push]
+
+jobs:
+  abuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Rust package
+        uses: docker://docker.io/library/rust:slim
+        with:
+          entrypoint: cargo
+          args: package --locked --no-verify
+      - name: Copy Rust package
+        run: |
+          pkgver=$(find target/package/ -name '*.crate' | sed -E -e 's,^.*-,,' -e 's,\.crate,,')
+          mv target/package/nfc_backend-$pkgver.crate alpine/
+          cd alpine
+          echo 'sha512sums="'"$(sha512sum nfc_backend-$pkgver.crate)"'"' | tee -a APKBUILD
+      - name: Build Alpine package
+        uses: docker://ghcr.io/msrd0/abuild-aarch64
+        with:
+          entrypoint: ash
+          args: -c './.gitea/workflows/alpine.sh "${{secrets.ABUILD_KEY}}"'

@@ -10,7 +10,7 @@ jobs:
         uses: docker://docker.io/library/rust:slim
         with:
           entrypoint: bash
-          args: -c 'package --locked --no-verify'
+          args: -c 'cargo package --locked --no-verify'
       - name: Copy Rust package
         run: |
           pkgver=$(find target/package/ -name '*.crate' | sed -E -e 's,^.*-,,' -e 's,\.crate,,')

@@ -11,6 +11,8 @@ jobs:
         with:
           entrypoint: /usr/local/cargo/bin/cargo
           args: package --locked --no-verify
+        env:
+          CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
       - name: Copy Rust package
         run: |
           pkgver=$(find target/package/ -name '*.crate' | sed -E -e 's,^.*-,,' -e 's,\.crate,,')
@@ -22,3 +24,5 @@ jobs:
         with:
           entrypoint: ash
           args: -c './.gitea/workflows/alpine.sh git@msrd0.de-641ad15a.rsa "${{secrets.ABUILD_KEY}}"'
+        env:
+          CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse

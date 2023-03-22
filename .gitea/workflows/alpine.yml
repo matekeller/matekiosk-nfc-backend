@@ -29,9 +29,9 @@ jobs:
         run: |
           set -eux
           cd packages
-          for file in $(find . -type f); do
+          for file in $(find . -type f | sed -e 's,./,,'); do
             curl \
-              --fail-with-body \
+              --fail \
               -T "$file" \
               --header "Authorization: token ${{github.token}}" \
               "https://msrd0.dev/api/packages/matekeller/generic/matekiosk-nfc-backend/3.17/$file"

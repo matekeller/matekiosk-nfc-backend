@@ -29,5 +29,5 @@ jobs:
         run: |
           cd packages
           for file in $(find . -type f); do
-            curl -T "$file" --header "Authorization: token ${{github.token}}" "https://msrd0.dev/api/packages/${{github.repository_owner}}/generic/matekiosk/nfc_backend/$file"
+            curl -T "$file" --header "Authorization: token ${{github.token}}" "https://msrd0.dev/api/packages/matekeller/generic/matekiosk-nfc-backend/3.17/$file"
           done

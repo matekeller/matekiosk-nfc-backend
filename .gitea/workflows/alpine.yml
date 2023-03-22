@@ -18,6 +18,7 @@ jobs:
           pkgver=$(find target/package/ -name '*.crate' | sed -E -e 's,^.*-,,' -e 's,\.crate,,')
           mv target/package/nfc_backend-$pkgver.crate alpine/
           cd alpine
+          sed -i -e "s,%pkgver%,$pkgver,"
           echo 'sha512sums="'"$(sha512sum nfc_backend-$pkgver.crate)"'"' | tee -a APKBUILD
       - name: Build Alpine package
         uses: docker://ghcr.io/msrd0/abuild-aarch64

@@ -8,7 +8,7 @@ url="https://msrd0.dev/matekeller/matekiosk-nfc-backend"
 arch="aarch64"
 license="custom"
 
-sources="nfc_backend-$pkgver.crate"
+source="nfc_backend-$pkgver.crate"
 makedepends="cargo rust-stdlib-aarch64"
 builddir="$srcdir"
 

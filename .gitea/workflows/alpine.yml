@@ -9,8 +9,8 @@ jobs:
       - name: Build Rust package
         uses: docker://docker.io/library/rust:slim
         with:
-          entrypoint: cargo
-          args: package --locked --no-verify
+          entrypoint: bash
+          args: -c 'package --locked --no-verify'
       - name: Copy Rust package
         run: |
           pkgver=$(find target/package/ -name '*.crate' | sed -E -e 's,^.*-,,' -e 's,\.crate,,')
@@ -21,4 +21,4 @@ jobs:
         uses: docker://ghcr.io/msrd0/abuild-aarch64
         with:
           entrypoint: ash
-          args: -c './.gitea/workflows/alpine.sh "${{secrets.ABUILD_KEY}}"'
+          args: -c './.gitea/workflows/alpine.sh git@msrd0.de-641ad15a.rsa "${{secrets.ABUILD_KEY}}"'

@@ -12,6 +12,7 @@ cp alpine/$1.pub ~/.abuild/
 set -x
 
 # initialize abuild config
+mkdir packages
 echo "PACKAGER_PRIVKEY=~/.abuild/$1" >>~/.abuild/abuild.conf
 echo "REPODEST=$PWD/packages" >>~/.abuild/abuild.conf
 echo 'export JOBS=2' >>~/.abuild/abuild.conf
@@ -21,8 +22,8 @@ echo 'export MAKEFLAGS=-j$JOBS' >>~/.abuild/abuild.conf
 abuild-apk update
 abuild-apk update --root $CBUILDROOT --arch $CTARGET
 
-# make sure we own the package directory
-sudo chown -R ${USER:-1000} alpine
+# make sure we own the relevant directory
+sudo chown -R ${USER:-1000} alpine packages
 
 # build the package
 cd alpine

@@ -12,7 +12,7 @@ cp alpine/$1.pub ~/.abuild/
 set -x
 
 # initialize abuild config
-mkdir packages
+sudo mkdir packages
 echo "PACKAGER_PRIVKEY=~/.abuild/$1" >>~/.abuild/abuild.conf
 echo "REPODEST=$PWD/packages" >>~/.abuild/abuild.conf
 echo 'export JOBS=2' >>~/.abuild/abuild.conf

@@ -16,6 +16,15 @@ prepare() {
 	default_prepare
 
 	tar xfz "nfc_backend-$pkgver.crate"
+	cat >>"nfc_backend-$pkgver/Cargo.toml" <<EOF
+# make sure the package doesn't think it's part of a workspace
+[workspace]
+
+# turn on size optimizations
+[profile.release]
+lto = true
+opt-level = "z"
+EOF
 }
 
 build() {

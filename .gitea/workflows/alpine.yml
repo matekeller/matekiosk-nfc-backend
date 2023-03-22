@@ -32,7 +32,7 @@ jobs:
           # remove old package
           curl \
             --fail \
-            -H "Authorization: token ${{github.token}}" \
+            -H "Authorization: token ${{secrets.PACKAGE_TOKEN}}" \
             -X DELETE \
             "https://msrd0.dev/api/packages/matekeller/generic/matekiosk-nfc-backend/aarch64" \
             || true
@@ -42,7 +42,7 @@ jobs:
           for file in $(find . -type f | sed -e 's,./,,'); do
             curl \
               --fail \
-              -H "Authorization: token ${{github.token}}" \
+              -H "Authorization: token ${{secrets.PACKAGE_TOKEN}}" \
               -T "$file" \
               "https://msrd0.dev/api/packages/matekeller/generic/matekiosk-nfc-backend/aarch64/$file"
           done

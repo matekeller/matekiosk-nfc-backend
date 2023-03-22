@@ -13,6 +13,7 @@ set -x
 
 # initialize abuild config
 echo "PACKAGER_PRIVKEY=~/.abuild/$1" >>~/.abuild/abuild.conf
+echo "REPODEST=$PWD/packages" >>~/.abuild/abuild.conf
 echo 'export JOBS=2' >>~/.abuild/abuild.conf
 echo 'export MAKEFLAGS=-j$JOBS' >>~/.abuild/abuild.conf
 
@@ -24,8 +25,6 @@ abuild-apk update --root $CBUILDROOT --arch $CTARGET
 sudo chown -R ${USER:-1000} alpine
 
 # build the package
-APKBUILD=alpine/APKBUILD abuild checksum
-APKBUILD=alpine/APKBUILD abuild -r
-
-# inspect our home to find the package
-find ~
+cd alpine
+abuild checksum
+abuild -r

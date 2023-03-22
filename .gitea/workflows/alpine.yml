@@ -25,3 +25,9 @@ jobs:
           args: -c './.gitea/workflows/alpine.sh git@msrd0.de-641ad15a.rsa "${{secrets.ABUILD_KEY}}"'
         env:
           CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+      - name: Upload to Gitea Packages
+        run: |
+          cd packages
+          for file in $(find . -type f); do
+            curl -T "$file" --header "Authorization: token ${{github.token}}" "https://gitea.example.com/api/packages/${{github.repository_owner}}/generic/matekiosk/nfc_backend/$file"
+          done

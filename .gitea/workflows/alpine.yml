@@ -28,11 +28,21 @@ jobs:
       - name: Upload to Gitea Packages
         run: |
           set -eux
-          cd packages
+
+          # remove old package
+          curl \
+            --fail \
+            -H "Authorization: token ${{github.token}}" \
+            -X DELETE \
+            "https://msrd0.dev/api/packages/matekeller/generic/matekiosk-nfc-backend/aarch64" \
+            || true
+
+          # upload new package
+          cd packages/matekiosk-nfc-backend/aarch64/
           for file in $(find . -type f | sed -e 's,./,,'); do
             curl \
               --fail \
+              -H "Authorization: token ${{github.token}}" \
               -T "$file" \
-              --header "Authorization: token ${{github.token}}" \
-              "https://msrd0.dev/api/packages/matekeller/generic/matekiosk-nfc-backend/3.17/$file"
+              "https://msrd0.dev/api/packages/matekeller/generic/matekiosk-nfc-backend/aarch64/$file"
           done

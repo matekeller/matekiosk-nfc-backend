@@ -29,5 +29,5 @@ jobs:
         run: |
           cd packages
           for file in $(find . -type f); do
-            curl -T "$file" --header "Authorization: token ${{github.token}}" "https://gitea.example.com/api/packages/${{github.repository_owner}}/generic/matekiosk/nfc_backend/$file"
+            curl -T "$file" --header "Authorization: token ${{github.token}}" "${{github.server_url}}/api/packages/${{github.repository_owner}}/generic/matekiosk/nfc_backend/$file"
           done

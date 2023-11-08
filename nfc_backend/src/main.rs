@@ -146,7 +146,7 @@ fn main() {
                 if event.is_term() {
                     websocket.close(None).ok();
                 }
-                match websocket.write_message(tungstenite::Message::Text(
+                match websocket.send(tungstenite::Message::Text(
                     serde_json::to_string(&CardEvent { event }).unwrap(),
                 )) {
                     Err(Error::ConnectionClosed)

@@ -1,216 +1,216 @@
-use crossbeam_channel::{Receiver, Sender};
-use parking_lot::Mutex;
+#![warn(rust_2018_idioms)]
+#![forbid(elided_lifetimes_in_paths, unsafe_code)]
+
+use futures_util::sink::SinkExt;
 use pcsc::{
-    Context, Protocols, ReaderState, Scope, ShareMode, State, MAX_BUFFER_SIZE, PNP_NOTIFICATION,
+	Context, Protocols, ReaderState, Scope, ShareMode, State, MAX_BUFFER_SIZE,
+	PNP_NOTIFICATION
 };
 use serde::Serialize;
-use std::{
-    sync::Arc,
-    time::{self, Duration},
+use std::{process::exit, time::Duration};
+use tokio::{
+	net::{TcpListener, TcpStream},
+	signal,
+	sync::broadcast::{self, Receiver, Sender},
+	time::sleep
 };
+use tokio_tungstenite::tungstenite;
 
-fn main() {
-    let mut sender = new_broadcaster();
-    {
-        let sender = sender.clone();
-        ctrlc::set_handler(move || {
-            sender.try_send(Event::SigTerm);
-            std::process::exit(0);
-        })
-        .expect("Cant set signal handler");
-    }
-    {
-        let sender = sender.clone();
-        std::thread::spawn(move || loop {
-            sender.try_send(Event::KeepAlive);
-            let ten_millis = time::Duration::from_secs(10);
-            std::thread::sleep(ten_millis)
-        });
-    }
-    {
-        let sender = sender.clone();
-        std::thread::spawn(move || {
-            let ctx = Context::establish(Scope::User).expect("failed to establish context");
-            let mut readers_buf = [0; 2048];
-            let mut reader_states = vec![
-                // Listen for reader insertions/removals, if supported.
-                ReaderState::new(PNP_NOTIFICATION(), State::UNAWARE),
-            ];
-            loop {
-                // Remove dead readers.
-                fn is_dead(rs: &ReaderState) -> bool {
-                    rs.event_state().intersects(State::UNKNOWN | State::IGNORE)
-                }
+async fn ctrl_c_handler(tx: &'static Sender<Event>) {
+	match signal::ctrl_c().await {
+		Ok(()) => {
+			tx.send(Event::SigTerm);
+		},
+		Err(err) => {
+			eprintln!("Unable to listen for shutdown signal: {}", err);
+			// we also shut down in case of error
+		}
+	}
+	exit(0);
+}
 
-                for rs in &reader_states {
-                    if is_dead(rs) {
-                        sender.try_send(Event::CardRemoved);
-                    }
-                }
-                reader_states.retain(|rs| !is_dead(rs));
+async fn keep_alive(tx: &'static Sender<Event>) {
+	loop {
+		tx.send(Event::KeepAlive);
+		sleep(Duration::from_secs(10)).await;
+	}
+}
 
-                // Add new readers.
-                let names = ctx
-                    .list_readers(&mut readers_buf)
-                    .expect("failed to list readers");
-                for name in names {
-                    if !reader_states.iter().any(|rs| rs.name() == name) {
-                        reader_states.push(ReaderState::new(name, State::UNAWARE));
-                    }
-                }
+async fn smartcard_handler(tx: &'static Sender<Event>) {
+	tokio::task::spawn_blocking(|| {
+		let ctx = Context::establish(Scope::User).expect("failed to establish context");
+		let mut readers_buf = [0; 2048];
+		let mut reader_states = vec![
+			// Listen for reader insertions/removals, if supported.
+			ReaderState::new(PNP_NOTIFICATION(), State::UNAWARE),
+		];
+		loop {
+			// Remove dead readers.
+			fn is_dead(rs: &ReaderState) -> bool {
+				rs.event_state().intersects(State::UNKNOWN | State::IGNORE)
+			}
 
-                // Update the view of the state to wait on.
-                for rs in &mut reader_states {
-                    rs.sync_current_state();
-                }
+			for rs in &reader_states {
+				if is_dead(rs) {
+					tx.send(Event::CardRemoved);
+				}
+			}
+			reader_states.retain(|rs| !is_dead(rs));
 
-                // Wait until the state changes.
-                ctx.get_status_change(None, &mut reader_states)
-                    .expect("failed to get status change");
+			// Add new readers.
+			let names = ctx
+				.list_readers(&mut readers_buf)
+				.expect("failed to list readers");
+			for name in names {
+				if !reader_states.iter().any(|rs| rs.name() == name) {
+					reader_states.push(ReaderState::new(name, State::UNAWARE));
+				}
+			}
 
-                for rs in &reader_states {
-                    if rs.name() != PNP_NOTIFICATION() {
-                        let event = if rs.event_state().contains(State::EMPTY) {
-                            Event::CardRemoved
-                        } else {
-                            let card =
-                                match ctx.connect(rs.name(), ShareMode::Shared, Protocols::ANY) {
-                                    Ok(card) => card,
-                                    _ => {
-                                        continue;
-                                    }
-                                };
+			// Update the view of the state to wait on.
+			for rs in &mut reader_states {
+				rs.sync_current_state();
+			}
 
-                            // send apdu command
-                            let apdu = b"\xFF\xCA\x00\x00\x00";
-                            let mut rapdu_buf = [0; MAX_BUFFER_SIZE];
-                            let mut rapdu = match card.transmit(apdu, &mut rapdu_buf) {
-                                Ok(rapdu) => {
-                                    let mut rapdu = hex::encode(rapdu);
-                                    let len = rapdu.len();
-                                    if len <= 4 {
-                                        continue;
-                                    }
-                                    rapdu.truncate(len - 4);
-                                    rapdu
-                                }
-                                _ => continue,
-                            };
-                            match hex::encode(rs.atr()).as_str() {
-                                "3b8180018080" => Event::CardPushed(format!("chip_{}", rapdu)),
-                                "3b8980014d54434f537302020439" | "3b8980014d54434f53730205043e" => {
-                                    rapdu.truncate(12);
-                                    Event::CardPushed(format!("semesterticket_{}", rapdu))
-                                }
-                                "3b87800173c840000090006d" => {
-                                    Event::CardPushed(format!("visa_{}", rapdu))
-                                }
-                                "3b8f8001804f0ca000000306030001000000006a" => {
-                                    Event::CardPushed(format!("blanks_{}", rapdu))
-                                }
-                                "3b8f8001804f0ca0000003060300020000000069" => {
-                                    Event::CardPushed(format!("uka_{}", rapdu))
-                                }
-                                "3b8d80018073c021c057597562694b65ff7f" => {
-                                    Event::CardPushed(format!("ubi_{}", rapdu))
-                                }
-                                a => {
-                                    eprintln!("{},{}", a, rapdu);
-                                    Event::CardRemoved
-                                }
-                            }
-                        };
-                        sender.try_send(event);
-                    }
-                }
-            }
-        });
-    }
+			// Wait until the state changes.
+			ctx.get_status_change(None, &mut reader_states)
+				.expect("failed to get status change");
 
-    // websocket stuff
-    let server = std::net::TcpListener::bind("127.0.0.1:9001").unwrap();
-    for stream in server.incoming() {
-        use tungstenite::error::Error;
-        let stream = stream.unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(604800)))
-            .unwrap();
-        let rec = sender.register_recv();
-        let mut websocket = tungstenite::accept(stream).unwrap();
-        std::thread::spawn(move || {
-            loop {
-                let event = match rec.recv() {
-                    Ok(event) => event,
-                    _ => continue,
-                };
-                if event.is_term() {
-                    websocket.close(None).ok();
-                }
-                match websocket.send(tungstenite::Message::Text(
-                    serde_json::to_string(&CardEvent { event }).unwrap(),
-                )) {
-                    Err(Error::ConnectionClosed)
-                    | Err(Error::AlreadyClosed)
-                    | Err(Error::Io(_)) => break,
-                    _ => (),
-                }
-            }
-            websocket.close(None).ok();
-        });
-    }
+			for rs in &reader_states {
+				if rs.name() != PNP_NOTIFICATION() {
+					let event = if rs.event_state().contains(State::EMPTY) {
+						Event::CardRemoved
+					} else {
+						let card = match ctx.connect(
+							rs.name(),
+							ShareMode::Shared,
+							Protocols::ANY
+						) {
+							Ok(card) => card,
+							_ => {
+								continue;
+							}
+						};
+
+						// send apdu command
+						let apdu = b"\xFF\xCA\x00\x00\x00";
+						let mut rapdu_buf = [0; MAX_BUFFER_SIZE];
+						let mut rapdu = match card.transmit(apdu, &mut rapdu_buf) {
+							Ok(rapdu) => {
+								let mut rapdu = hex::encode(rapdu);
+								let len = rapdu.len();
+								if len <= 4 {
+									continue;
+								}
+								rapdu.truncate(len - 4);
+								rapdu
+							},
+							_ => continue
+						};
+						match hex::encode(rs.atr()).as_str() {
+							"3b8180018080" => {
+								Event::CardPushed(format!("chip_{}", rapdu))
+							},
+							"3b8980014d54434f537302020439"
+							| "3b8980014d54434f53730205043e" => {
+								rapdu.truncate(12);
+								Event::CardPushed(format!("semesterticket_{}", rapdu))
+							},
+							"3b87800173c840000090006d" => {
+								Event::CardPushed(format!("visa_{}", rapdu))
+							},
+							"3b8f8001804f0ca000000306030001000000006a" => {
+								Event::CardPushed(format!("blanks_{}", rapdu))
+							},
+							"3b8f8001804f0ca0000003060300020000000069" => {
+								Event::CardPushed(format!("uka_{}", rapdu))
+							},
+							"3b8d80018073c021c057597562694b65ff7f" => {
+								Event::CardPushed(format!("ubi_{}", rapdu))
+							},
+							a => {
+								eprintln!("{},{}", a, rapdu);
+								Event::CardRemoved
+							}
+						}
+					};
+					tx.send(event);
+				}
+			}
+		}
+	});
+}
+
+async fn accept_connection(stream: TcpStream, mut rx: Receiver<Event>) {
+	let addr = stream
+		.peer_addr()
+		.expect("connected streams should have a peer address");
+	let mut ws_stream = tokio_tungstenite::accept_async(stream)
+		.await
+		.expect("Error during the websocket handshake occurred");
+	println!("New Connection from {}", addr);
+
+	loop {
+		let event = match rx.recv().await {
+			Ok(event) => event,
+			_ => continue
+		};
+		if event.is_term() {
+			break;
+		}
+		match ws_stream
+			.send(tungstenite::Message::Text(
+				serde_json::to_string(&CardEvent { event }).unwrap()
+			))
+			.await
+		{
+			Err(tungstenite::Error::ConnectionClosed)
+			| Err(tungstenite::Error::AlreadyClosed)
+			| Err(tungstenite::Error::Io(_)) => break,
+			_ => ()
+		}
+	}
+	ws_stream.close(None).await;
+}
+
+async fn run() {
+	let (tx, rx) = broadcast::channel(16);
+	let tx = Box::leak(Box::new(tx));
+
+	tokio::spawn(ctrl_c_handler(tx));
+	tokio::spawn(keep_alive(tx));
+	tokio::spawn(smartcard_handler(tx));
+
+	let addr = "127.0.0.1:9001";
+	let listener = TcpListener::bind(&addr)
+		.await
+		.unwrap_or_else(|err| panic!("Failed to listen on {addr}: {err}"));
+	println!("Listening on {addr}");
+	while let Ok((stream, _)) = listener.accept().await {
+		tokio::spawn(accept_connection(stream, rx.resubscribe()));
+	}
+}
+
+#[tokio::main]
+async fn main() {
+	run().await
 }
 
 #[derive(Serialize)]
 struct CardEvent {
-    event: Event,
+	event: Event
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 enum Event {
-    CardPushed(String),
-    CardRemoved,
-    SigTerm,
-    KeepAlive,
+	CardPushed(String),
+	CardRemoved,
+	SigTerm,
+	KeepAlive
 }
 
 impl Event {
-    fn is_term(&self) -> bool {
-        match self {
-            Self::SigTerm => true,
-            _ => false,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Broadcaster<T> {
-    recievers: Arc<Mutex<Vec<Sender<T>>>>,
-}
-
-pub fn new_broadcaster<T>() -> Broadcaster<T> {
-    Broadcaster {
-        recievers: Arc::new(Mutex::new(Vec::new())),
-    }
-}
-
-impl<T> Broadcaster<T>
-where
-    T: Clone,
-{
-    pub fn try_send(&self, message: T) {
-        self.recievers
-            .lock()
-            .iter()
-            .for_each(|rec| Broadcaster::try_send_ignoring_errors(rec, message.clone()));
-    }
-
-    pub fn register_recv(&mut self) -> Receiver<T> {
-        let (sender, reciever) = crossbeam_channel::unbounded();
-        self.recievers.lock().push(sender);
-        reciever
-    }
-
-    fn try_send_ignoring_errors(sender: &Sender<T>, message: T) {
-        sender.try_send(message).ok();
-    }
+	fn is_term(&self) -> bool {
+		matches!(self, Self::SigTerm)
+	}
 }

@@ -119,6 +119,9 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 							"3b87800173c840000090006d" => {
 								Event::CardPushed(format!("visa_{}", rapdu))
 							},
+							"3b8780018031c073d631c023" => {
+								Event::CardPushed(format!("giro_{}", rapdu))
+							},
 							"3b8f8001804f0ca000000306030001000000006a" => {
 								Event::CardPushed(format!("blanks_{}", rapdu))
 							},

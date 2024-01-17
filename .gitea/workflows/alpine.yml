@@ -16,7 +16,7 @@ jobs:
       - name: Copy Rust package
         run: |
           pkgver=$(find target/package/ -name '*.crate' | sed -E -e 's,^.*-,,' -e 's,\.crate,,')
-          mv target/package/nfc_backend-$pkgver.crate alpine/
+          sudo mv target/package/nfc_backend-$pkgver.crate alpine/
           sed -i -e "s,%pkgver%,$pkgver," alpine/APKBUILD
       - name: Build Alpine package
         uses: docker://ghcr.io/msrd0/abuild-aarch64

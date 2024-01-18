@@ -36,7 +36,7 @@ jobs:
               --fail \
               -H "Authorization: token ${{secrets.PACKAGE_TOKEN}}" \
               -X DELETE \
-              "https://msrd0.dev/api/packages/matekeller/alpine/v3.18/matekiosk/$file"
+              "https://msrd0.dev/api/packages/matekeller/alpine/v3.18/matekiosk/$file" \
               || true
             
             # upload new package

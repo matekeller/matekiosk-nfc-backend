@@ -44,5 +44,5 @@ jobs:
               --fail \
               -H "Authorization: token ${{secrets.PACKAGE_TOKEN}}" \
               -T "$file" \
-              "https://msrd0.dev/api/packages/matekeller/alpine/v3.18/matekiosk/"
+              "https://msrd0.dev/api/packages/matekeller/alpine/v3.18/matekiosk"
           done

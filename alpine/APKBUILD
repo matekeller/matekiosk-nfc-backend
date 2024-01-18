@@ -8,7 +8,7 @@ url="https://msrd0.dev/matekeller/matekiosk-nfc-backend"
 arch="aarch64"
 license="custom"
 
-subpackages="$pkgname-openrc::noarch"
+subpackages="$pkgname-openrc"
 
 makedepends_build="cargo rust-stdlib-aarch64 pcsc-lite-dev"
 makedepends_host="gcc pcsc-lite-dev"

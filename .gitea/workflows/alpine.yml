@@ -10,7 +10,7 @@ jobs:
         alpine:
           - version: "3.18"
           - version: "3.19"
-    name: abuild ${{matrix.alpine.version}}
+    name: abuild ${{ matrix.alpine.version }}
     steps:
       - uses: actions/checkout@v4
       - name: Build Rust package
@@ -26,7 +26,7 @@ jobs:
           sudo mv target/package/nfc_backend-$pkgver.crate alpine/
           sed -i -e "s,%pkgver%,$pkgver," alpine/APKBUILD
       - name: Build Alpine package
-        uses: docker://ghcr.io/msrd0/abuild-aarch64:${{matrix.alpine.version}}
+        uses: docker://ghcr.io/msrd0/abuild-aarch64:${{ matrix.alpine.version }}
         with:
           entrypoint: ash
           args: -c './.gitea/workflows/alpine.sh git@msrd0.de-65a92c7e.rsa "${{secrets.ABUILD_KEY}}"'
@@ -43,7 +43,7 @@ jobs:
               --fail \
               -H "Authorization: token ${{secrets.PACKAGE_TOKEN}}" \
               -X DELETE \
-              "https://msrd0.dev/api/packages/matekeller/alpine/${{matrix.alpine.version}}/matekiosk/$file" \
+              "https://msrd0.dev/api/packages/matekeller/alpine/${{ matrix.alpine.version }}/matekiosk/$file" \
               || true
             
             # upload new package

@@ -131,6 +131,9 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 							"3b8d80018073c021c057597562694b65ff7f" => {
 								Event::CardPushed(format!("ubi_{}", rapdu))
 							},
+							"3b8a80010031c173c8400000900090" => {
+								Event::CardPushed(format!("pagopace_{}", rapdu))
+							}
 							a => {
 								eprintln!("{},{}", a, rapdu);
 								Event::CardRemoved

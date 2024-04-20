@@ -1,6 +1,6 @@
 [package]
 name = "nfc_backend"
-version = "0.1.2"
+version = "0.1.3"
 publish = false
 authors = ["Max Böcker <max.boecker@rwth-aachen.de>"]
 edition = "2021"

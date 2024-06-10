@@ -14,6 +14,10 @@ use tokio::{
 	sync::broadcast::{self, Receiver, Sender},
 	time::sleep
 };
+use tokio::io::{self, BufReader, AsyncBufReadExt};
+use tokio_serial::{
+	self, DataBits, FlowControl, Parity, SerialPortBuilderExt, StopBits
+};
 use tokio_tungstenite::tungstenite;
 
 async fn ctrl_c_handler(tx: &'static Sender<Event>) {
@@ -147,6 +151,23 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 	});
 }
 
+async fn serial_handler(tx: &'static Sender<Event>) {
+	let port = tokio_serial::new("/dev/ttyUSB0", 9600)
+		.data_bits(DataBits::Seven)
+		.flow_control(FlowControl::None)
+		.parity(Parity::Even)
+		.stop_bits(StopBits::Two)
+		.open_native_async()
+		.expect("failed to open serial port");
+	let mut br = BufReader::new(port);
+	loop {
+		let mut s = String::new();
+		br.read_line(&mut s).await;
+		let event = Event::Barcode(s.trim().into());
+		tx.send(event);
+	}
+}
+
 async fn accept_connection(stream: TcpStream, mut rx: Receiver<Event>) {
 	let addr = stream
 		.peer_addr()
@@ -212,7 +233,8 @@ enum Event {
 	CardPushed(String),
 	CardRemoved,
 	SigTerm,
-	KeepAlive
+	KeepAlive,
+	Barcode(String),
 }
 
 impl Event {

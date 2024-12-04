@@ -112,7 +112,8 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 								Event::CardPushed(format!("chip_{}", rapdu))
 							},
 							"3b8980014d54434f537302020439"
-							| "3b8980014d54434f53730205043e" => {
+							| "3b8980014d54434f53730205043e"
+							| "3b8e80015644562d4b41204944333720464d6e" => {
 								rapdu.truncate(12);
 								Event::CardPushed(format!("semesterticket_{}", rapdu))
 							},
@@ -133,7 +134,7 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 							},
 							"3b8a80010031c173c8400000900090" => {
 								Event::CardPushed(format!("pagopace_{}", rapdu))
-							}
+							},
 							a => {
 								eprintln!("{},{}", a, rapdu);
 								Event::CardRemoved

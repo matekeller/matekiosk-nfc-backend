@@ -8,6 +8,7 @@ echo "-----BEGIN PRIVATE KEY-----" >~/.abuild/$1
 echo "$2" >>~/.abuild/$1
 echo "-----END PRIVATE KEY-----" >>~/.abuild/$1
 cp alpine/$1.pub ~/.abuild/
+sudo cp alpine/$1.pub /etc/apk/keys/
 
 set -x
 

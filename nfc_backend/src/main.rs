@@ -107,7 +107,6 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 							},
 							_ => continue,
 						};
-						eprintln!("{}, {}", hex::encode(rs.atr()).as_str(), rapdu);
 						match hex::encode(rs.atr()).as_str() {
 							"3b8180018080" => {
 								Event::CardPushed(format!("chip_{}", rapdu))

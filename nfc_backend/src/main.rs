@@ -4,7 +4,7 @@
 use futures_util::sink::SinkExt;
 use pcsc::{
 	Context, Protocols, ReaderState, Scope, ShareMode, State, MAX_BUFFER_SIZE,
-	PNP_NOTIFICATION
+	PNP_NOTIFICATION,
 };
 use serde::Serialize;
 use std::{process::exit, time::Duration};
@@ -12,7 +12,7 @@ use tokio::{
 	net::{TcpListener, TcpStream},
 	signal,
 	sync::broadcast::{self, Receiver, Sender},
-	time::sleep
+	time::sleep,
 };
 use tokio_tungstenite::tungstenite;
 
@@ -24,7 +24,7 @@ async fn ctrl_c_handler(tx: &'static Sender<Event>) {
 		Err(err) => {
 			eprintln!("Unable to listen for shutdown signal: {}", err);
 			// we also shut down in case of error
-		}
+		},
 	}
 	exit(0);
 }
@@ -84,12 +84,12 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 						let card = match ctx.connect(
 							rs.name(),
 							ShareMode::Shared,
-							Protocols::ANY
+							Protocols::ANY,
 						) {
 							Ok(card) => card,
 							_ => {
 								continue;
-							}
+							},
 						};
 
 						// send apdu command
@@ -105,8 +105,9 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 								rapdu.truncate(len - 4);
 								rapdu
 							},
-							_ => continue
+							_ => continue,
 						};
+						eprintln!("{}, {}", hex::encode(rs.atr()).as_str(), rapdu);
 						match hex::encode(rs.atr()).as_str() {
 							"3b8180018080" => {
 								Event::CardPushed(format!("chip_{}", rapdu))
@@ -137,8 +138,8 @@ async fn smartcard_handler(tx: &'static Sender<Event>) {
 							},
 							a => {
 								eprintln!("{},{}", a, rapdu);
-								Event::CardRemoved
-							}
+								Event::CardPushed(format!("other_{}", rapdu))
+							},
 						}
 					};
 					tx.send(event);
@@ -160,21 +161,21 @@ async fn accept_connection(stream: TcpStream, mut rx: Receiver<Event>) {
 	loop {
 		let event = match rx.recv().await {
 			Ok(event) => event,
-			_ => continue
+			_ => continue,
 		};
 		if event.is_term() {
 			break;
 		}
 		match ws_stream
 			.send(tungstenite::Message::Text(
-				serde_json::to_string(&CardEvent { event }).unwrap()
+				serde_json::to_string(&CardEvent { event }).unwrap(),
 			))
 			.await
 		{
 			Err(tungstenite::Error::ConnectionClosed)
 			| Err(tungstenite::Error::AlreadyClosed)
 			| Err(tungstenite::Error::Io(_)) => break,
-			_ => ()
+			_ => (),
 		}
 	}
 	ws_stream.close(None).await;
@@ -205,7 +206,7 @@ async fn main() {
 
 #[derive(Serialize)]
 struct CardEvent {
-	event: Event
+	event: Event,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -213,7 +214,7 @@ enum Event {
 	CardPushed(String),
 	CardRemoved,
 	SigTerm,
-	KeepAlive
+	KeepAlive,
 }
 
 impl Event {
